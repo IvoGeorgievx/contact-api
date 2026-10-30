@@ -1,7 +1,7 @@
-import { Router } from 'express';
+import { Router, json } from 'express';
 import { createHmac } from 'node:crypto';
 import { config } from '../config';
-import { contactSchema, validate } from '../validation';
+import { contactSchema, validate, type ContactInput } from '../validation';
 import { requireAllowedOrigin, contactLimiter } from '../security';
 import { insertSubmission, updateTelegramStatus } from '../db';
 import { sendTelegramNotification } from '../telegram';
@@ -12,40 +12,35 @@ router.post(
   '/contact',
   contactLimiter,
   requireAllowedOrigin,
+  json({ limit: '10kb' }),
   validate(contactSchema),
-  async (req, res) => {
-    const { name, email, phone, message } = req.body;
+  async (req, res, next) => {
+    let id: number;
+    const { name, email, phone, message, source } = req.body as ContactInput;
 
-    const ip = req.ip || req.socket.remoteAddress || 'unknown';
-    const ipHash = createHmac('sha256', config.ipHashSecret)
-      .update(ip)
-      .digest('hex');
-    const userAgent = req.headers['user-agent'] || null;
+    try {
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      const ipHash = createHmac('sha256', config.ipHashSecret).update(ip).digest('hex');
+      id = insertSubmission({
+        name, email, phone, message, source,
+        ip_hash: ipHash,
+        user_agent: req.headers['user-agent'] || null,
+        turnstile_success: false,
+        telegram_status: 'sending',
+        telegram_error: null,
+      });
+    } catch (err) {
+      next(err);
+      return;
+    }
 
-    const id = insertSubmission({
-      name,
-      email,
-      phone,
-      message,
-      ip_hash: ipHash,
-      user_agent: userAgent,
-      turnstile_success: false,
-      telegram_status: 'sending',
-      telegram_error: null,
-    });
-
-    const result = await sendTelegramNotification({
-      name,
-      email,
-      phone,
-      message,
-      submissionId: id,
-    });
-
-    if (result.success) {
-      updateTelegramStatus(id, 'sent');
-    } else {
-      updateTelegramStatus(id, 'failed', result.error);
+    try {
+      const result = await sendTelegramNotification({ name, email, phone, message, source, submissionId: id });
+      updateTelegramStatus(id, result.success ? 'sent' : 'failed', result.error ?? null);
+      if (!result.success) console.error('notification_failed', { submissionId: id });
+    } catch {
+      // The receipt is already durable: a bookkeeping failure must not invite a duplicate submission.
+      console.error('notification_status_failed', { submissionId: id });
     }
 
     res.status(202).json({

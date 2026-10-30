@@ -1,9 +1,16 @@
 node_modules/
 dist/
+data/
+backups/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
 
-.env
-.env.local
-.env.production
+.env*
+!.env.example
 
 *.log
 npm-debug.log*
@@ -17,3 +24,6 @@ Thumbs.db
 *.swo
 
 out/
+compose.rollback.local.yml
+/docs
+/tests

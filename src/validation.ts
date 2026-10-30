@@ -2,13 +2,15 @@ import { z } from 'zod';
 import type { Request, Response, NextFunction } from 'express';
 
 export const contactSchema = z.object({
+  source: z.enum(['main-website', 'studio']).default('main-website'),
   name: z
     .string()
     .min(1, 'Name is required')
     .max(100, 'Name must be 100 characters or less'),
   email: z
     .string()
-    .email('Invalid email address')
+    // Preserve the previous email acceptance rules across the Zod security upgrade.
+    .regex(/^(?!\.)(?!.*\.\.)([A-Z0-9_'+\-.]*)[A-Z0-9_+-]@([A-Z0-9][A-Z0-9\-]*\.)+[A-Z]{2,}$/i, 'Invalid email address')
     .max(255, 'Email must be 255 characters or less'),
   phone: z
     .string()
@@ -22,14 +24,14 @@ export const contactSchema = z.object({
 
 export type ContactInput = z.infer<typeof contactSchema>;
 
-export function validate(schema: z.ZodSchema) {
+export function validate(schema: z.ZodType) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const result = schema.safeParse(req.body);
     if (!result.success) {
       res.status(400).json({
         success: false,
         error: 'Validation failed',
-        details: result.error.errors.map(e => ({
+        details: result.error.issues.map(e => ({
           field: e.path.join('.'),
           message: e.message,
         })),

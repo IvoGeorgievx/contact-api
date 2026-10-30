@@ -1,3 +1,11 @@
+import { isIP } from 'node:net';
+
+const trustedProxies = (process.env.TRUSTED_PROXIES ?? 'loopback')
+  .split(',').map(value => value.trim()).filter(Boolean);
+if (trustedProxies.some(value => value !== 'loopback' && isIP(value) === 0)) {
+  throw new Error('TRUSTED_PROXIES must contain only loopback or explicit proxy IP addresses');
+}
+
 export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '3000', 10),
@@ -5,6 +13,8 @@ export const config = {
   allowedOrigins: (process.env.ALLOWED_ORIGINS || 'http://localhost:3000')
     .split(',')
     .map(s => s.trim()),
+
+  trustedProxies,
 
   sqlitePath: process.env.SQLITE_PATH || './data/app.db',
 
